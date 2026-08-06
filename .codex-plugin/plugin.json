@@ -1,0 +1,7 @@
+{
+  "id": "idiot-ai",
+  "name": "Idiot AI 骂人统计",
+  "description": "自动扫描本地 AI 日志，确认后上传匿名聚合统计",
+  "version": "0.2.0",
+  "skills": ["idiot-ai"]
+}

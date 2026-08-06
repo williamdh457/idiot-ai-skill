@@ -1,0 +1,4 @@
+interface:
+  display_name: "Idiot AI 骂人统计"
+  short_description: "扫描本地统计，确认后上传匿名聚合快照"
+  default_prompt: "扫描我的本地 AI-agent 骂人统计，汇总四个时间窗后问我是否上传。"
