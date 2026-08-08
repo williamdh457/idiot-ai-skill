@@ -9,9 +9,11 @@ When this Skill is invoked, the **first tool call must be the scan command below
 
 This matches the Mac app scan path: one automatic `scanAll` over local agent sources. The agent only runs the script and reports the JSON.
 
-## Install (once per machine / agent)
+## Install (once per machine / agent) — do this before any scan bash
 
-Primary (Vercel skills CLI / skills.sh ecosystem):
+If the skill is **not** installed yet, install first. Do **not** invent a scan path for a missing skill.
+
+Primary:
 
 ```bash
 npx skills add williamdh457/idiot-ai-skill -g -y
@@ -29,9 +31,9 @@ Manual: clone or copy this repo into an agent skill root:
 - Codex: `~/.codex/skills/idiot-ai`
 - Shared: `~/.agents/skills/idiot-ai`
 
-Requires **Node.js 18+**. Runtime is the bundled `runtime/skill.mjs` (no monorepo checkout).
+Runtime is the bundled `runtime/skill.mjs` (no monorepo checkout).
 
-## Scan first — always
+## Scan first — always (after install)
 
 Prefer an installed skill path (do **not** hardcode a machine-absolute path like `/Users/...`):
 
