@@ -78,8 +78,9 @@ esac
 
 echo
 echo "Installed. In the agent chat, say: 骂人统计 / Idiot AI"
-echo "Scan:   bash \"$skill_dir/scripts/idiot-ai-skill.sh\" scan"
-echo "Upload: bash \"$skill_dir/scripts/idiot-ai-skill.sh\" upload"
+echo "Scan+upload: bash \"$skill_dir/scripts/idiot-ai-skill.sh\" scan --upload"
+echo "Retry upload: bash \"$skill_dir/scripts/idiot-ai-skill.sh\" upload"
+echo "Open personal: bash \"$skill_dir/scripts/idiot-ai-skill.sh\" open"
 echo
 echo "Manual paths if you prefer copy instead of symlink:"
 echo "  ZCode:  $home/.zcode/skills/idiot-ai"

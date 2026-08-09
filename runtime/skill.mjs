@@ -1,6 +1,7 @@
-// Idiot AI skill runtime (bundled). Aggregate-only local scan + optional upload.
+// Idiot AI skill runtime (bundled). Aggregate-only local scan + auto-upload.
 
 // packages/core/scripts/skill.ts
+import { spawn } from "node:child_process";
 import {
   chmodSync as chmodSync2,
   existsSync as existsSync10,
@@ -10,6 +11,7 @@ import {
   rmSync,
   writeFileSync as writeFileSync4
 } from "node:fs";
+import { platform } from "node:os";
 import { dirname as dirname5, join as join5 } from "node:path";
 
 // packages/core/src/types/index.ts
@@ -27,7 +29,7 @@ var WORDS = [
   { id: "wo-qu", text: "\u6211\u53BB", severity: S("mild"), lang: "zh" },
   { id: "kao", text: "\u9760", severity: S("mild"), lang: "zh", antiPatterns: ["\u9760\u8C31", "\u4F9D\u9760", "\u9760\u7740", "\u9760\u5C71", "\u9760\u8FD1"] },
   // 轻度「卧槽」不再挂 woc/我艹：那两个词形归重度「我操」，避免同一 alias 双归属
-  { id: "wo-cao", text: "\u5367\u69FD", severity: S("mild"), lang: "zh", aliases: ["\u6211\u64E6"] },
+  { id: "wo-cao", text: "\u5367\u69FD", severity: S("mild"), lang: "zh", aliases: ["\u6211\u64E6", "\u6211\u69FD", "\u5367\u8279"] },
   { id: "tian-a", text: "\u5929\u554A", severity: S("mild"), lang: "zh" },
   { id: "fu-le", text: "\u670D\u4E86", severity: S("mild"), lang: "zh" },
   { id: "wu-yu", text: "\u65E0\u8BED", severity: S("mild"), lang: "zh" },
@@ -35,6 +37,7 @@ var WORDS = [
   { id: "li-pu", text: "\u79BB\u8C31", severity: S("mild"), lang: "zh" },
   { id: "han", text: "\u6C57", severity: S("mild"), lang: "zh" },
   { id: "emmm", text: "emmm", severity: S("mild"), lang: "mixed", aliases: ["emm"] },
+  { id: "keng-die", text: "\u5751\u7239", severity: S("mild"), lang: "zh", aliases: ["\u5751\u4EBA", "\u5751\u8D27"] },
   // Mild English
   { id: "damn", text: "damn", severity: S("mild"), lang: "en" },
   { id: "crap", text: "crap", severity: S("mild"), lang: "en" },
@@ -47,10 +50,71 @@ var WORDS = [
   { id: "dang", text: "dang", severity: S("mild"), lang: "en" },
   { id: "heck", text: "heck", severity: S("mild"), lang: "en" },
   // Severe Chinese
-  { id: "cao", text: "\u64CD", severity: S("severe"), lang: "zh", antiPatterns: ["\u64CD\u4F5C", "\u64CD\u573A", "\u64CD\u5FC3", "\u64CD\u7EC3", "\u4F53\u64CD", "\u65E9\u64CD", "\u64CD\u63A7", "\u64CD\u7EB5", "\u64CD\u5B88", "\u64CD\u884C"] },
+  // 「草/艹」作骂人单字时并入「操」；生活/写作义用 antiPatterns 挡掉
+  {
+    id: "cao",
+    text: "\u64CD",
+    severity: S("severe"),
+    lang: "zh",
+    aliases: ["\u8349", "\u8279"],
+    antiPatterns: [
+      "\u64CD\u4F5C",
+      "\u64CD\u573A",
+      "\u64CD\u5FC3",
+      "\u64CD\u7EC3",
+      "\u4F53\u64CD",
+      "\u65E9\u64CD",
+      "\u64CD\u63A7",
+      "\u64CD\u7EB5",
+      "\u64CD\u5B88",
+      "\u64CD\u884C",
+      "\u8349\u8393",
+      "\u8349\u7A3F",
+      "\u8349\u539F",
+      "\u8349\u6848",
+      "\u82B1\u8349",
+      "\u8349\u6728",
+      "\u8D77\u8349",
+      "\u672C\u8349",
+      "\u70DF\u8349",
+      "\u9664\u8349",
+      "\u5272\u8349",
+      "\u79CD\u8349",
+      "\u62D4\u8349",
+      "\u7518\u8349",
+      "\u6C34\u8349",
+      "\u9752\u8349",
+      "\u6742\u8349",
+      "\u8349\u7387",
+      "\u6F66\u8349",
+      "\u8349\u8349",
+      "\u8349\u56FE",
+      "\u8349\u4E66",
+      "\u8349\u6839",
+      "\u7A3B\u8349",
+      "\u5E72\u8349",
+      "\u7267\u8349",
+      "\u836F\u8349",
+      "\u82B3\u8349",
+      "\u91CE\u8349",
+      "\u9999\u8349"
+    ]
+  },
   { id: "wo-cao-sev", text: "\u6211\u64CD", severity: S("severe"), lang: "zh", aliases: ["\u5367\u64CD", "\u6211\u8349", "\u6211\u8279", "woc"] },
-  { id: "ta-ma-de", text: "\u4ED6\u5988\u7684", severity: S("severe"), lang: "zh", aliases: ["tm\u7684", "tmd", "\u8E0F\u9A6C\u7684", "\u7279\u4E48\u7684", "\u4ED6\u9A6C\u7684"] },
-  { id: "sha-bi", text: "\u50BB\u903C", severity: S("severe"), lang: "zh", aliases: ["\u715E\u7B14", "\u50BB\u5C44", "sb"] },
+  {
+    id: "ta-ma-de",
+    text: "\u4ED6\u5988\u7684",
+    severity: S("severe"),
+    lang: "zh",
+    aliases: ["tm\u7684", "tmd", "\u8E0F\u9A6C\u7684", "\u7279\u4E48\u7684", "\u4ED6\u9A6C\u7684", "\u4ED6\u5417\u7684", "\u5979\u5988\u7684", "\u4F60\u5988\u7684"]
+  },
+  {
+    id: "sha-bi",
+    text: "\u50BB\u903C",
+    severity: S("severe"),
+    lang: "zh",
+    aliases: ["\u715E\u7B14", "\u50BB\u5C44", "sb", "\u6C99\u903C", "\u6C99\u6BD4", "\u715E\u903C", "\u50BB\u53C9", "\u50BBB", "\u50BBb", "\u50BBX", "\u50BBx", "2b", "2B"]
+  },
   { id: "bai-chi", text: "\u767D\u75F4", severity: S("severe"), lang: "zh" },
   { id: "nao-can", text: "\u8111\u6B8B", severity: S("severe"), lang: "zh" },
   { id: "hun-dan", text: "\u6DF7\u86CB", severity: S("severe"), lang: "zh" },
@@ -58,15 +122,31 @@ var WORDS = [
   { id: "gun-dan", text: "\u6EDA\u86CB", severity: S("severe"), lang: "zh", aliases: ["\u6EDA\u5F00"] },
   { id: "qu-si", text: "\u53BB\u6B7B", severity: S("severe"), lang: "zh", aliases: ["\u53BB\u6B7B\u5427"] },
   { id: "ma-de", text: "\u5988\u7684", severity: S("severe"), lang: "zh", aliases: ["\u5988\u4E2A", "ma\u7684"] },
-  { id: "cao-ni-ma", text: "\u8349\u6CE5\u9A6C", severity: S("severe"), lang: "zh", aliases: ["\u64CD\u4F60\u5988", "\u8349\u4F60\u9A6C", "cnm"] },
+  { id: "cao-ni-ma", text: "\u8349\u6CE5\u9A6C", severity: S("severe"), lang: "zh", aliases: ["\u64CD\u4F60\u5988", "\u8349\u4F60\u9A6C", "cnm", "wcnm"] },
   { id: "ni-ma", text: "\u5C3C\u739B", severity: S("severe"), lang: "zh", aliases: ["\u4F60\u9A6C", "nm"] },
-  { id: "la-ji", text: "\u5783\u573E", severity: S("severe"), lang: "zh" },
+  { id: "la-ji", text: "\u5783\u573E", severity: S("severe"), lang: "zh", aliases: ["\u8FA3\u9E21"] },
   { id: "qi-si-wo-l", text: "\u6C14\u6B7B\u6211\u4E86", severity: S("severe"), lang: "zh" },
   { id: "you-bing", text: "\u6709\u75C5", severity: S("severe"), lang: "zh" },
   { id: "zhi-zhang", text: "\u667A\u969C", severity: S("severe"), lang: "zh" },
   { id: "chun-huo", text: "\u8822\u8D27", severity: S("severe"), lang: "zh" },
   { id: "wang-ba-dan", text: "\u738B\u516B\u86CB", severity: S("severe"), lang: "zh" },
   { id: "feng-le", text: "\u75AF\u4E86", severity: S("severe"), lang: "zh", aliases: ["\u4F60\u75AF"] },
+  { id: "nmsl", text: "\u4F60\u5988\u6B7B\u4E86", severity: S("severe"), lang: "zh", aliases: ["nmsl"] },
+  { id: "wdnmd", text: "\u6211\u6253\u4F60\u5988\u7684", severity: S("severe"), lang: "zh", aliases: ["wdnmd"] },
+  { id: "mmp", text: "\u5988\u5356\u6279", severity: S("severe"), lang: "zh", aliases: ["mmp"] },
+  {
+    id: "ma-bi",
+    text: "\u5988\u903C",
+    severity: S("severe"),
+    lang: "zh",
+    aliases: ["\u9EBB\u75F9", "\u9A6C\u75F9"],
+    antiPatterns: ["\u795E\u7ECF\u9EBB\u75F9", "\u9762\u90E8\u9EBB\u75F9", "\u80A2\u4F53\u9EBB\u75F9", "\u808C\u8089\u9EBB\u75F9", "\u5C40\u90E8\u9EBB\u75F9"]
+  },
+  { id: "gou-ri-de", text: "\u72D7\u65E5\u7684", severity: S("severe"), lang: "zh" },
+  { id: "jian-ren", text: "\u8D31\u4EBA", severity: S("severe"), lang: "zh" },
+  { id: "biao-zi", text: "\u5A4A\u5B50", severity: S("severe"), lang: "zh" },
+  { id: "gou-shi", text: "\u72D7\u5C4E", severity: S("severe"), lang: "zh" },
+  { id: "er-bi", text: "\u4E8C\u903C", severity: S("severe"), lang: "zh", aliases: ["\u4E8CB", "\u4E8Cb"] },
   // Severe English
   // 完整短语单独成词；与 what-the / fuck 重叠时由 matcher 最长+重度优先保留本条
   { id: "what-the-fuck", text: "what the fuck", severity: S("severe"), lang: "en", aliases: ["what the f*ck", "what the f**k"] },
@@ -78,6 +158,7 @@ var WORDS = [
   // 产品名 Idiot AI / 路径 idiot_ai 不算骂人
   { id: "idiot", text: "idiot", severity: S("severe"), lang: "en", aliases: ["id*ot", "idiotic"], antiPatterns: ["idiot ai", "idiot_ai", "idiot-ai", "@idiot-ai"] },
   { id: "shit", text: "shit", severity: S("severe"), lang: "en", aliases: ["sh*t", "s**t"] },
+  { id: "bullshit", text: "bullshit", severity: S("severe"), lang: "en", aliases: ["bull shit", "bullsh*t", "b*llshit"] },
   { id: "bastard", text: "bastard", severity: S("severe"), lang: "en" },
   { id: "motherfucker", text: "motherfucker", severity: S("severe"), lang: "en", aliases: ["mofo", "mthrfckr", "m f"] },
   { id: "stfu", text: "stfu", severity: S("severe"), lang: "en", aliases: ["shut the fuck up"] },
@@ -92,7 +173,7 @@ var WORDS = [
 ];
 
 // packages/core/src/models/catalog.ts
-var MODEL_CATALOG_VERSION = 5;
+var MODEL_CATALOG_VERSION = 6;
 var UNKNOWN_MODEL = "unknown";
 var PROVISIONAL_PREFIX = "p:";
 var nfkcLower = (s) => s.normalize("NFKC").toLowerCase();
@@ -102,15 +183,72 @@ var stripProviderPrefix = (raw) => {
   s = s.replace(/^[\w\-. ]+[/:]/, "");
   return s.trim();
 };
+var isGatewayRouteId = (raw) => {
+  const s = nfkcLower(raw).trim();
+  if (!s) return false;
+  if (/^(spur|nice)[-_\s]?route[-_\s]?[a-f0-9]{8,}$/i.test(s)) return true;
+  const compact = normalizeModelKey(s);
+  if (/^(spur|nice)route[a-f0-9]{8,}$/.test(compact)) return true;
+  const stripped = stripProviderPrefix(s);
+  if (stripped && stripped !== s) return isGatewayRouteId(stripped);
+  return false;
+};
+var isNoiseModelTail = (tail) => {
+  if (!tail) return false;
+  if (/^\d{2,}$/.test(tail)) return true;
+  if (/^[一-鿿]/.test(tail)) return true;
+  if (/^[a-f0-9]{8,}$/i.test(tail)) return true;
+  return false;
+};
+var expandModelCandidates = (raw) => {
+  const out = [];
+  const push = (value) => {
+    if (!value) return;
+    const t = value.trim();
+    if (!t) return;
+    if (!out.includes(t)) out.push(t);
+  };
+  push(raw);
+  const stripped = stripProviderPrefix(raw);
+  push(stripped);
+  const peelOne = (s) => {
+    const sep2 = s.match(/^(.*)[.\-_/@]([^.\-_/@]+)$/u);
+    if (sep2) {
+      const head = sep2[1];
+      const seg = sep2[2];
+      const noise = /[一-鿿]/.test(seg) || /^\d{2,}$/.test(seg) || /^[a-f0-9]{8,}$/i.test(seg);
+      if (noise && head && head.length >= 2) return head;
+    }
+    const glued = s.match(/^(.*?)[一-鿿].*$/u);
+    if (glued && glued[1] && glued[1].length >= 3) {
+      return glued[1].replace(/[.\-_/@]+$/g, "");
+    }
+    return null;
+  };
+  for (const base of [...out]) {
+    let cur = base;
+    for (let i = 0; i < 6; i++) {
+      const next = peelOne(cur);
+      if (!next || next === cur) break;
+      push(next);
+      cur = next;
+    }
+  }
+  return out;
+};
 var isProvisionalModelId = (id) => Boolean(id && id.startsWith(PROVISIONAL_PREFIX));
 var provisionalModelSlug = (raw) => {
   let s = nfkcLower(raw).trim();
   if (!s) return null;
   if (/:\/\//.test(s) || s.includes("\\") || s.includes("..")) return null;
+  if (isGatewayRouteId(s)) return null;
   if (s.startsWith(PROVISIONAL_PREFIX)) s = s.slice(PROVISIONAL_PREFIX.length);
+  const candidates = expandModelCandidates(s);
+  s = candidates[candidates.length - 1] || s;
   const stripped = stripProviderPrefix(s);
   s = stripped || s;
   s = s.replace(/[_\s/]+/g, "-").replace(/[^a-z0-9一-鿿.+-]+/g, "-").replace(/-+/g, "-").replace(/^\.+|\.+$/g, "").replace(/^-+|-+$/g, "");
+  s = s.replace(/(?:^|[-.])[一-鿿].*$/u, "").replace(/[.\-]+$/g, "");
   if (!s || s.length < 3 || s.length > 64) return null;
   const hasDigit = /\d/.test(s);
   const segments = s.split(/[-.+]/).filter(Boolean);
@@ -218,7 +356,7 @@ var AGENT_PROVIDER = {
 };
 var builtinModelCatalog = () => ({
   version: MODEL_CATALOG_VERSION,
-  updatedAt: "2026-08-06T00:00:00.000Z",
+  updatedAt: "2026-08-09T00:00:00.000Z",
   models: CATALOG
 });
 var mergeModelCatalogs = (base, overlay) => {
@@ -252,6 +390,8 @@ var ModelResolver = class {
   anyIndex = /* @__PURE__ */ new Map();
   providerIndex = /* @__PURE__ */ new Map();
   byId = /* @__PURE__ */ new Map();
+  /** Sorted longest-first for prefix matching on vendor-suffixed keys. */
+  normKeysDesc = [];
   constructor(catalog = builtinModelCatalog()) {
     this.catalog = catalog;
     for (const entry of catalog.models) {
@@ -279,6 +419,7 @@ var ModelResolver = class {
         }
       }
     }
+    this.normKeysDesc = [...this.anyIndex.keys()].sort((a, b) => b.length - a.length);
   }
   lookupAny(norm) {
     return this.anyIndex.get(norm) ?? null;
@@ -288,9 +429,25 @@ var ModelResolver = class {
     if (!list || list.length !== 1) return null;
     return list[0];
   }
+  /**
+   * When a raw key is `catalogKey + noiseTail` (e.g. `gpt56sol橙子便宜`),
+   * recover the longest catalog match. Requires the tail to look like vendor/
+   * build noise so we never merge `gpt-5.6-sol` into bare `gpt-5.6`.
+   */
+  lookupLongestPrefix(norm) {
+    if (!norm || norm.length < 4) return null;
+    for (const key of this.normKeysDesc) {
+      if (key.length < 3 || key.length >= norm.length) continue;
+      if (!norm.startsWith(key)) continue;
+      const tail = norm.slice(key.length);
+      if (!isNoiseModelTail(tail)) continue;
+      return this.anyIndex.get(key) ?? null;
+    }
+    return null;
+  }
   /** Try direct alias lookup across the raw candidate forms. */
   lookupCandidates(raw, provider) {
-    const candidates = [raw, stripProviderPrefix(raw)];
+    const candidates = expandModelCandidates(raw);
     const norms = [...new Set(candidates.map(normalizeModelKey).filter(Boolean))];
     for (const norm of norms) {
       const hit = this.lookupAny(norm);
@@ -298,6 +455,10 @@ var ModelResolver = class {
     }
     for (const norm of norms) {
       const hit = this.lookupProvider(provider, norm);
+      if (hit) return hit;
+    }
+    for (const norm of norms) {
+      const hit = this.lookupLongestPrefix(norm);
       if (hit) return hit;
     }
     return null;
@@ -308,7 +469,8 @@ var ModelResolver = class {
    * Order: exact alias → provider-scoped alias → session context →
    * provisional (`p:<slug>`) → unknown.
    * Garbage / ultra-short unprovable tokens still collapse to `unknown`
-   * (never `unrecognized:<provider>` buckets).
+   * (never `unrecognized:<provider>` buckets). Gateway route IDs also collapse
+   * to unknown (they are transport tokens, not model names).
    */
   resolve(input) {
     const raw = input.rawModelId ?? null;
@@ -328,12 +490,19 @@ var ModelResolver = class {
       }
       return unknown();
     }
+    if (isGatewayRouteId(raw)) {
+      return unknown();
+    }
     if (isProvisionalModelId(raw)) {
       const body = raw.slice(PROVISIONAL_PREFIX.length);
       const promoted = this.lookupCandidates(body, provider) ?? this.byId.get(body) ?? // compact provisional body may match catalog after normalize
       this.lookupAny(normalizeModelKey(body));
       if (promoted) {
         return finish(promoted.id, promoted.displayName, "exact");
+      }
+      const prefixHit = this.lookupLongestPrefix(normalizeModelKey(body));
+      if (prefixHit) {
+        return finish(prefixHit.id, prefixHit.displayName, "exact");
       }
       const keep = toProvisionalModelId(body);
       if (keep) {
@@ -343,7 +512,7 @@ var ModelResolver = class {
     }
     const direct = this.lookupCandidates(raw, provider);
     if (direct) {
-      const rawNorms = [raw, stripProviderPrefix(raw)].map(normalizeModelKey);
+      const rawNorms = expandModelCandidates(raw).map(normalizeModelKey);
       const conf = direct.providerAliases?.some(
         (a) => rawNorms.includes(normalizeModelKey(a)) && !direct.aliases?.some((al) => normalizeModelKey(al) === normalizeModelKey(a))
       ) ? "provider-alias" : "exact";
@@ -370,6 +539,7 @@ var ModelResolver = class {
     let entry = null;
     for (const raw of sessionModels) {
       if (!raw) continue;
+      if (isGatewayRouteId(raw)) continue;
       const hit = this.lookupCandidates(raw, provider);
       if (hit) {
         resolved.add(hit.id);
@@ -1155,11 +1325,15 @@ var attachModelStats = (byModelScores, modelMessages) => {
 var summarizePeriod = (events, messageStats) => {
   const base = summarizeEvents(events);
   const modelMessages = countMessagesByModel(messageStats);
+  const byAgent = { ...base.byAgent };
+  for (const m of messageStats) {
+    if (!byAgent[m.agentId]) byAgent[m.agentId] = emptyScore();
+  }
   return {
     mild: base.mild,
     severe: base.severe,
     score: base.score,
-    byAgent: base.byAgent,
+    byAgent,
     byModel: attachModelStats(base.byModel, modelMessages),
     byWord: base.byWord,
     byHitForm: base.byHitForm,
@@ -6604,7 +6778,7 @@ var Pattern = class _Pattern {
   #isUNC;
   #isAbsolute;
   #followGlobstar = true;
-  constructor(patternList, globList, index, platform) {
+  constructor(patternList, globList, index, platform2) {
     if (!isPatternList(patternList)) {
       throw new TypeError("empty pattern list");
     }
@@ -6621,7 +6795,7 @@ var Pattern = class _Pattern {
     this.#patternList = patternList;
     this.#globList = globList;
     this.#index = index;
-    this.#platform = platform;
+    this.#platform = platform2;
     if (this.#index === 0) {
       if (this.isUNC()) {
         const [p0, p1, p2, p3, ...prest] = this.#patternList;
@@ -6763,12 +6937,12 @@ var Ignore = class {
   absoluteChildren;
   platform;
   mmopts;
-  constructor(ignored, { nobrace, nocase, noext, noglobstar, platform = defaultPlatform2 }) {
+  constructor(ignored, { nobrace, nocase, noext, noglobstar, platform: platform2 = defaultPlatform2 }) {
     this.relative = [];
     this.absolute = [];
     this.relativeChildren = [];
     this.absoluteChildren = [];
-    this.platform = platform;
+    this.platform = platform2;
     this.mmopts = {
       dot: true,
       nobrace,
@@ -6776,7 +6950,7 @@ var Ignore = class {
       noext,
       noglobstar,
       optimizationLevel: 2,
-      platform,
+      platform: platform2,
       nocomment: true,
       nonegate: true
     };
@@ -8575,6 +8749,7 @@ var scanAll = (now = /* @__PURE__ */ new Date(), opts = {}) => {
 
 // packages/core/scripts/skill.ts
 var MAX_PENDING_AGE_MS = 15 * 60 * 1e3;
+var DEFAULT_SITE = "https://dumbai.spur.best";
 var defaultPendingPath = () => join5(dirname5(defaultDevicePath()), "pending-upload.json");
 var printJson = (value) => {
   process.stdout.write(`${JSON.stringify(value)}
@@ -8584,10 +8759,14 @@ var usage = () => {
   process.stdout.write(
     [
       "Usage:",
-      "  npm run skill -- scan [--pending <path>]",
+      "  npm run skill -- scan [--upload] [--pending <path>]",
       "  npm run skill -- upload [--pending <path>]",
+      "  npm run skill -- open",
       "",
-      "scan writes an aggregate-only, signed pending snapshot. upload sends that exact snapshot."
+      "scan writes an aggregate-only, signed pending snapshot.",
+      "scan --upload (default for \u9A82\u4EBA\u7EDF\u8BA1) also sends that snapshot and opens personalUrl.",
+      "upload re-sends a pending snapshot if a previous auto-upload failed.",
+      "open prints personalUrl from ~/.idiot-ai/device.json and opens it (bind this browser / re-open me)."
     ].join("\n") + "\n"
   );
 };
@@ -8598,15 +8777,44 @@ var parseArgs = () => {
     process.exit(0);
   }
   const [rawCommand] = args;
-  if (rawCommand !== "scan" && rawCommand !== "upload") {
+  if (rawCommand !== "scan" && rawCommand !== "upload" && rawCommand !== "open") {
     usage();
-    throw new Error('Expected command "scan" or "upload".');
+    throw new Error('Expected command "scan", "upload", or "open".');
   }
   const pendingIndex = args.indexOf("--pending");
   if (pendingIndex !== -1 && !args[pendingIndex + 1]) {
     throw new Error("Expected a file path after --pending.");
   }
-  return { command: rawCommand, pendingPath: pendingIndex === -1 ? defaultPendingPath() : args[pendingIndex + 1] };
+  return {
+    command: rawCommand,
+    pendingPath: pendingIndex === -1 ? defaultPendingPath() : args[pendingIndex + 1],
+    autoUpload: rawCommand === "scan" && args.includes("--upload")
+  };
+};
+var openInDefaultBrowser = (url) => {
+  try {
+    const os = platform();
+    const child = os === "darwin" ? spawn("open", [url], { detached: true, stdio: "ignore" }) : os === "win32" ? spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }) : spawn("xdg-open", [url], { detached: true, stdio: "ignore" });
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+};
+var siteUrlFromBase = (base) => {
+  const raw = (base || DEFAULT_SITE).trim() || DEFAULT_SITE;
+  try {
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return new URL(withScheme).origin;
+  } catch {
+    return DEFAULT_SITE;
+  }
+};
+var personalUrlsFor = (device) => {
+  const siteUrl = siteUrlFromBase(process.env.IDIOT_AI_URL || device.serverUrl || DEFAULT_SITE);
+  const personalUrl = `${siteUrl}/dashboard?view=personal&device=${device.deviceId.toLowerCase()}`;
+  const allPeopleUrl = `${siteUrl}/dashboard?view=all`;
+  return { siteUrl, personalUrl, allPeopleUrl };
 };
 var writePending = (path2, snapshot) => {
   mkdirSync4(dirname5(path2), { recursive: true });
@@ -8639,8 +8847,30 @@ var readPending = (path2) => {
   return parsed;
 };
 var endpointFor = (serverUrl) => serverUrl.includes("/api/") ? serverUrl : `${serverUrl.replace(/\/$/, "")}/api/v1/ingest`;
-var siteUrlFor = (endpoint) => new URL(endpoint).origin;
-var scan = async (pendingPath) => {
+var postSnapshot = async (snapshot, device) => {
+  if (device.deviceId !== snapshot.deviceId) {
+    throw new Error("Pending scan belongs to another device identity. Run the Skill scan again.");
+  }
+  const endpoint = endpointFor(process.env.IDIOT_AI_URL || device.serverUrl || DEFAULT_SITE);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(snapshot)
+  });
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    body = { message: await response.text().catch(() => "") };
+  }
+  if (!response.ok) {
+    throw new Error(`Upload failed (${response.status}): ${JSON.stringify(body)}`);
+  }
+  const { siteUrl, personalUrl, allPeopleUrl } = personalUrlsFor(device);
+  const openedBrowser = openInDefaultBrowser(personalUrl);
+  return { body, siteUrl, personalUrl, allPeopleUrl, openedBrowser };
+};
+var scan = async (pendingPath, autoUpload) => {
   const device = await loadOrCreateDevice();
   try {
     hydrateModelCatalogFromCache();
@@ -8676,57 +8906,74 @@ var scan = async (pendingPath) => {
       return [period, { mild: value.mild, severe: value.severe, score: value.score }];
     })
   );
-  printJson({
+  const compact = {
     status: "scan_ready",
     deviceId: device.deviceId,
     nickname: device.nickname,
     scannedAt: result.scannedAt,
-    modelCatalogVersion: catalogVersion,
     messages: result.messages.length,
     matches: result.events.length,
     periods,
     topModel: topModel ? { modelId: topModel.modelId, rage: topModel.rage, score: topModel.score, messageCount: topModel.messageCount } : null,
     topWord,
-    provisionalModels: provisional,
     pendingPath
+  };
+  if (!autoUpload) {
+    printJson({
+      ...compact,
+      modelCatalogVersion: catalogVersion,
+      provisionalModels: provisional
+    });
+    return;
+  }
+  const uploaded = await postSnapshot(snapshot, device);
+  rmSync(pendingPath, { force: true });
+  printJson({
+    ...compact,
+    status: "uploaded",
+    modelCatalogVersion: catalogVersion,
+    provisionalModels: provisional,
+    siteUrl: uploaded.siteUrl,
+    allPeopleUrl: uploaded.allPeopleUrl,
+    personalUrl: uploaded.personalUrl,
+    openedBrowser: uploaded.openedBrowser,
+    response: uploaded.body
   });
 };
 var upload = async (pendingPath) => {
   const snapshot = readPending(pendingPath);
   const device = await loadOrCreateDevice();
-  if (device.deviceId !== snapshot.deviceId) {
-    throw new Error("Pending scan belongs to another device identity. Run the Skill scan again.");
-  }
-  const endpoint = endpointFor(process.env.IDIOT_AI_URL || device.serverUrl || "https://dumbai.spur.best");
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(snapshot)
-  });
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    body = { message: await response.text().catch(() => "") };
-  }
-  if (!response.ok) {
-    throw new Error(`Upload failed (${response.status}): ${JSON.stringify(body)}`);
-  }
+  const uploaded = await postSnapshot(snapshot, device);
   rmSync(pendingPath, { force: true });
-  const siteUrl = siteUrlFor(endpoint);
   printJson({
     status: "uploaded",
     scannedAt: snapshot.scannedAt,
+    siteUrl: uploaded.siteUrl,
+    allPeopleUrl: uploaded.allPeopleUrl,
+    personalUrl: uploaded.personalUrl,
+    openedBrowser: uploaded.openedBrowser,
+    response: uploaded.body
+  });
+};
+var openPersonal = async () => {
+  const device = await loadOrCreateDevice();
+  const { siteUrl, personalUrl, allPeopleUrl } = personalUrlsFor(device);
+  const opened = openInDefaultBrowser(personalUrl);
+  printJson({
+    status: "opened",
+    deviceId: device.deviceId.toLowerCase(),
+    nickname: device.nickname,
     siteUrl,
-    allPeopleUrl: `${siteUrl}/dashboard?view=all`,
-    personalUrl: `${siteUrl}/dashboard?view=personal&device=${snapshot.deviceId}`,
-    response: body
+    allPeopleUrl,
+    personalUrl,
+    openedBrowser: opened
   });
 };
 var main = async () => {
-  const { command, pendingPath } = parseArgs();
-  if (command === "scan") await scan(pendingPath);
-  else await upload(pendingPath);
+  const { command, pendingPath, autoUpload } = parseArgs();
+  if (command === "scan") await scan(pendingPath, autoUpload);
+  else if (command === "upload") await upload(pendingPath);
+  else await openPersonal();
 };
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);

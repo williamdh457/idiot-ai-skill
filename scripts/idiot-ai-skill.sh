@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# pwd -P so monorepo symlink installs (e.g. ~/.zcode/skills/idiot-ai -> repo)
+# resolve to the real checkout instead of ~/.zcode/packages/core.
+skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 bundled="$skill_dir/runtime/skill.mjs"
 
 if [[ -f "$bundled" ]]; then
@@ -13,7 +15,7 @@ if [[ -f "$bundled" ]]; then
 fi
 
 # Monorepo / local-dev fallback: run TypeScript core via tsx.
-repo_root="$(cd "$skill_dir/../.." && pwd)"
+repo_root="$(cd "$skill_dir/../.." && pwd -P)"
 core_dir="${IDIOT_AI_CORE_DIR:-$repo_root/packages/core}"
 
 if [[ ! -f "$core_dir/package.json" ]]; then
